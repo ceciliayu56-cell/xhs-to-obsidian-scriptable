@@ -1,11 +1,13 @@
-// XHS to Obsidian for Scriptable v1.0.0
-// 小红书视频解析 -> Groq 转写 -> DeepSeek 总结 -> Obsidian
+// XHS to Obsidian for Scriptable v1.1.0
+// 小红书图文/视频解析 -> DeepSeek 总结 -> Obsidian
 
 const GROQ_KEY_NAME = "xhs_obsidian_groq_api_key";
 const DEEPSEEK_KEY_NAME = "xhs_obsidian_deepseek_api_key";
 const TRANSCRIBE_MODEL = "whisper-large-v3-turbo";
+const VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const SUMMARY_MODEL = "deepseek-v4-flash";
 const MAX_VIDEO_BYTES = 24 * 1024 * 1024;
+const MAX_IMAGES_PER_REQUEST = 5;
 let currentStage = "准备运行";
 
 async function main() {
@@ -20,20 +22,27 @@ async function main() {
     throw new Error("剪贴板中没有找到小红书链接");
   }
 
-  const groqKey = await getApiKey(GROQ_KEY_NAME, "Groq", "gsk_...");
   const deepSeekKey = await getApiKey(DEEPSEEK_KEY_NAME, "DeepSeek", "sk-...");
-  await showStartNotice();
+  currentStage = "读取小红书页面";
+  const note = await fetchXhsNote(sourceUrl);
+  await showStartNotice(note.type);
+
+  const groqKey = await getApiKey(GROQ_KEY_NAME, "Groq", "gsk_...");
   currentStage = "检查 Groq 网络和 API Key";
   await checkGroq(groqKey);
 
-  currentStage = "读取小红书页面";
-  const note = await fetchXhsNote(sourceUrl);
-
-  currentStage = "等待 Groq 转写视频";
-  const transcript = await transcribeVideo(note.videoUrl, groqKey);
+  let transcript = "";
+  let imageContent = "";
+  if (note.type === "video") {
+    currentStage = "等待 Groq 转写视频";
+    transcript = await transcribeVideo(note.videoUrl, groqKey);
+  } else {
+    currentStage = "等待 Groq 识别图片内容";
+    imageContent = await readImagesWithGroq(note.imageUrls, groqKey);
+  }
   currentStage = "等待 DeepSeek 生成结构化摘要";
-  const summary = await summarizeNote(note, transcript, deepSeekKey);
-  const markdown = buildMarkdown(note, transcript, summary);
+  const summary = await summarizeNote(note, transcript, imageContent, deepSeekKey);
+  const markdown = buildMarkdown(note, transcript, imageContent, summary);
 
   currentStage = "打开 Obsidian";
   Pasteboard.copyString(markdown);
@@ -63,18 +72,40 @@ async function fetchXhsNote(url) {
   const html = await request.loadString();
   ensureSuccess(request, "读取小红书页面");
 
-  const title = readJsonString(html, "title") || "小红书视频摘录";
-  const desc = readJsonString(html, "desc");
-  let videoUrl = readJsonString(html, "masterUrl");
-  if (!videoUrl) throw new Error("页面中没有找到视频地址，可能是图文笔记或页面结构已变化");
-  videoUrl = videoUrl.replace(/^http:/, "https:");
+  const finalUrl = request.response && request.response.url ? request.response.url : url;
+  const noteId = readNoteId(finalUrl);
+  const noteText = getNoteScope(html, noteId);
+  const title = readJsonString(noteText, "title") || readLdJson(html)?.headline?.replace(/\s*-\s*小红书$/, "") || "小红书摘录";
+  const desc = readJsonString(noteText, "desc") || readLdJson(html)?.description || "";
+  const rawVideoUrl = readJsonString(noteText, "masterUrl");
+  const videoUrl = rawVideoUrl ? normalizeMediaUrl(rawVideoUrl) : "";
+  const imageUrls = readImageUrls(noteText, html);
+  const type = videoUrl ? "video" : imageUrls.length ? "image" : "";
+
+  if (!type) {
+    throw new Error("页面中没有找到视频或图片，可能需要重新复制分享链接，或小红书页面结构已变化");
+  }
 
   return {
     title,
     desc,
+    type,
     videoUrl,
-    sourceUrl: request.response && request.response.url ? request.response.url : url,
+    imageUrls,
+    sourceUrl: finalUrl,
   };
+}
+
+function readNoteId(url) {
+  const match = url.match(/\/(?:item|explore)\/([a-z0-9]+)/i);
+  return match ? match[1] : "";
+}
+
+function getNoteScope(html, noteId) {
+  if (!noteId) return html;
+  const anchor = `"noteDetailMap":{"${noteId}":`;
+  const start = html.indexOf(anchor);
+  return start >= 0 ? html.slice(start, start + 500000) : html;
 }
 
 function readJsonString(text, key) {
@@ -86,6 +117,72 @@ function readJsonString(text, key) {
   } catch (_) {
     return match[1].replace(/\\u002F/g, "/").replace(/\\n/g, "\n");
   }
+}
+
+function readImageUrls(noteText, html) {
+  const imageList = readJsonArray(noteText, "imageList");
+  const urls = imageList.map(image => {
+    const defaultInfo = Array.isArray(image.infoList)
+      ? image.infoList.find(item => item.imageScene === "WB_DFT")
+      : null;
+    return image.urlDefault || defaultInfo?.url || image.urlPre || image.url || "";
+  }).filter(Boolean).map(normalizeMediaUrl);
+
+  if (urls.length) return [...new Set(urls)];
+
+  const ldJson = readLdJson(html);
+  const fallback = Array.isArray(ldJson?.image) ? ldJson.image : ldJson?.image ? [ldJson.image] : [];
+  return [...new Set(fallback.filter(Boolean).map(normalizeMediaUrl))];
+}
+
+function readJsonArray(text, key) {
+  const marker = `"${key}":`;
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return [];
+  const start = text.indexOf("[", markerIndex + marker.length);
+  if (start < 0) return [];
+  const raw = readBalancedJson(text, start, "[", "]");
+  if (!raw) return [];
+  try {
+    const value = JSON.parse(raw);
+    return Array.isArray(value) ? value : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function readBalancedJson(text, start, open, close) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index++) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === open) depth++;
+    else if (char === close && --depth === 0) return text.slice(start, index + 1);
+  }
+  return "";
+}
+
+function readLdJson(html) {
+  const matches = html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+  for (const match of matches) {
+    try {
+      const value = JSON.parse(match[1]);
+      if (value && (value.headline || value.description || value.image)) return value;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function normalizeMediaUrl(url) {
+  return String(url).replace(/^http:/, "https:");
 }
 
 async function transcribeVideo(videoUrl, apiKey) {
@@ -129,8 +226,47 @@ async function transcribeVideoData(videoData, apiKey) {
   return result.text.trim();
 }
 
-async function summarizeNote(note, transcript, apiKey) {
-  const prompt = `请根据以下小红书笔记信息生成结构化 Markdown 摘要。\n\n标题：${note.title}\n原文：${note.desc || "无"}\n视频转写：${transcript}\n\n要求：\n1. 只依据材料，不要编造。\n2. 输出“## 内容摘要”“## 视频内容”“## 核心要点”“## 标签”四个部分。\n3. 内容摘要用一段话；视频内容按叙述顺序整理；核心要点使用列表；标签输出 3-8 个 Obsidian 标签。\n4. 不要重复输出一级标题和来源链接。`;
+async function readImagesWithGroq(imageUrls, apiKey) {
+  const results = [];
+  for (let start = 0; start < imageUrls.length; start += MAX_IMAGES_PER_REQUEST) {
+    const batch = imageUrls.slice(start, start + MAX_IMAGES_PER_REQUEST);
+    currentStage = `等待 Groq 识别图片 ${start + 1}-${start + batch.length}`;
+    const content = [{
+      type: "text",
+      text: `请按顺序读取这 ${batch.length} 张小红书笔记图片。逐张输出“### 图片 N”，N 从 ${start + 1} 开始。完整抄录可辨识的中文、数字、表格和关键标注，再简要描述与文字理解相关的画面信息。看不清的地方标注“无法辨识”，不要猜测。`,
+    }];
+    batch.forEach(url => content.push({ type: "image_url", image_url: { url } }));
+
+    const request = new Request("https://api.groq.com/openai/v1/chat/completions");
+    request.method = "POST";
+    request.timeoutInterval = 240;
+    request.headers = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    };
+    request.body = JSON.stringify({
+      model: VISION_MODEL,
+      temperature: 0.1,
+      max_completion_tokens: 4096,
+      messages: [{ role: "user", content }],
+    });
+    const result = await request.loadJSON();
+    ensureSuccess(request, "Groq 图片识别", result, GROQ_KEY_NAME);
+    const text = result.choices?.[0]?.message?.content;
+    if (!text || !text.trim()) throw new Error("Groq 图片识别结果为空");
+    results.push(text.trim());
+  }
+  return results.join("\n\n");
+}
+
+async function summarizeNote(note, transcript, imageContent, apiKey) {
+  const material = note.type === "video"
+    ? `视频转写：${transcript}`
+    : `笔记类型：图文\n图片数量：${note.imageUrls.length}\n图片识别内容：\n${imageContent}`;
+  const sections = note.type === "video"
+    ? "“## 内容摘要”“## 视频内容”“## 核心要点”“## 标签”四个部分"
+    : "“## 内容摘要”“## 核心要点”“## 标签”三个部分";
+  const prompt = `请根据以下小红书笔记信息生成结构化 Markdown 摘要。\n\n标题：${note.title}\n原文：${note.desc || "无"}\n${material}\n\n要求：\n1. 只依据材料，不要猜测或编造。图片识别内容可能有误，遇到矛盾或无法辨识的信息要明确说明。\n2. 输出${sections}。\n3. 内容摘要用一段话；核心要点使用列表；标签输出 3-8 个 Obsidian 标签。\n4. 涉及金额、比例、日期、政策条件时保留原始数值，并提醒读者以当地官方口径为准。\n5. 不要重复输出一级标题和来源链接。`;
 
   const request = new Request("https://api.deepseek.com/chat/completions");
   request.method = "POST";
@@ -157,10 +293,19 @@ async function summarizeNote(note, transcript, apiKey) {
   return content.trim();
 }
 
-function buildMarkdown(note, transcript, summary) {
+function buildMarkdown(note, transcript, imageContent, summary) {
   const now = new Date();
   const captured = now.toISOString();
-  return `---\nsource: "${note.sourceUrl.replace(/"/g, '\\"')}"\nplatform: xiaohongshu\ncaptured: ${captured}\ntags:\n  - 小红书摘录\n---\n\n# ${note.title}\n\n> [查看原笔记](${note.sourceUrl})\n\n## 笔记原文\n\n${note.desc || "（原笔记没有文字说明）"}\n\n${summary}\n\n<details>\n<summary>视频转写原文</summary>\n\n${transcript}\n\n</details>\n`;
+  const images = note.imageUrls.length
+    ? `\n\n## 笔记图片\n\n${note.imageUrls.map((url, index) => `![小红书图片 ${index + 1}](${url})`).join("\n\n")}`
+    : "";
+  const transcriptBlock = transcript
+    ? `\n\n<details>\n<summary>视频转写原文</summary>\n\n${transcript}\n\n</details>`
+    : "";
+  const imageContentBlock = imageContent
+    ? `\n\n<details>\n<summary>图片识别原文</summary>\n\n${imageContent}\n\n</details>`
+    : "";
+  return `---\nsource: "${note.sourceUrl.replace(/"/g, '\\"')}"\nplatform: xiaohongshu\ncontent_type: ${note.type}\ncaptured: ${captured}\ntags:\n  - 小红书摘录\n---\n\n# ${note.title}\n\n> [查看原笔记](${note.sourceUrl})\n\n## 笔记原文\n\n${note.desc || "（原笔记没有文字说明）"}${images}\n\n${summary}${transcriptBlock}${imageContentBlock}\n`;
 }
 
 function openInObsidian(title) {
@@ -210,10 +355,12 @@ async function getApiKey(keyName, provider, placeholder) {
   return key;
 }
 
-async function showStartNotice() {
+async function showStartNotice(type) {
   const alert = new Alert();
   alert.title = "开始处理";
-  alert.message = "Groq 将直接读取视频地址并转写，DeepSeek 随后生成摘要，通常需要 20 秒到 1 分钟。";
+  alert.message = type === "video"
+    ? "已识别为视频笔记。iPhone 将下载视频，Groq 转写后由 DeepSeek 生成摘要，通常需要 20 秒到 1 分钟。"
+    : "已识别为图文笔记。Groq 将分批读取图片文字和画面信息，再由 DeepSeek 生成摘要，通常需要 20 秒到 1 分钟。";
   alert.addAction("继续");
   alert.addCancelAction("取消");
   const choice = await alert.present();
