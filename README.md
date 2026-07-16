@@ -1,6 +1,6 @@
 # XHS to Obsidian CN for Scriptable
 
-一套在 iPhone/iPad 上运行的小红书图文与视频摘录流程：解析分享链接，用阿里云百炼千问识别图片、视频画面、字幕和声音，生成结构化摘要，再写入 Obsidian。
+一套在 iPhone/iPad 上运行的小红书图文与视频摘录流程：解析分享链接，用千问大模型识别图片、视频画面、字幕和声音，生成结构化摘要，再写入 Obsidian。
 
 ## 主要功能
 
