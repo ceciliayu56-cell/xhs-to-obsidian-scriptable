@@ -57,7 +57,7 @@ node tests/parser.test.mjs
 
 ## 免责声明
 
-本项目与小红书、阿里云百炼、Scriptable 或 Obsidian 无隶属关系。
+本项目与小红书、Scriptable 或 Obsidian 无隶属关系。
 
 ## License
 
