@@ -8,7 +8,7 @@ const source = fs.readFileSync(fs.existsSync(skillScript) ? skillScript : repoSc
 const executable = source.slice(0, source.indexOf("\ntry {\n  await main();"));
 const context = { console, Date, JSON, RegExp, Set, String, Math };
 
-assert.match(source, /^\/\/ XHS to Obsidian for Scriptable v1\.6\.0/);
+assert.match(source, /^\/\/ XHS to Obsidian for Scriptable v1\.6\.1/);
 assert.match(source, /const VISION_MODEL = "qwen3\.7-plus"/);
 assert.match(source, /const SUMMARY_MODEL = "qwen3\.7-plus"/);
 assert.match(source, /qwen3\.5-omni-plus-2026-03-15/);
@@ -84,23 +84,23 @@ const markdown = testApi.buildMarkdown({
 }, "", "### 图片 1\n公积金基数调整", "## 内容摘要\n摘要");
 
 assert.match(markdown, /content_type: image/);
-assert.match(markdown, /region: CN/);
+assert.doesNotMatch(markdown, /\nregion: CN\n/);
 assert.match(markdown, /captured: \d{4}-\d{2}-\d{2}\n/);
 assert.doesNotMatch(markdown, /captured: .*T/);
-assert.match(markdown, /\ntags:\n  - 小红书摘录-CN\n/);
-assert.match(markdown, /# 7月公积金调整-CN/);
+assert.doesNotMatch(markdown, /\ntags:\n/);
+assert.match(markdown, /# 7月公积金调整/);
 assert.match(markdown, /!\[小红书图片 1\]\(https:\/\/sns-webpic-qc\.xhscdn\.com/);
 assert.match(markdown, /<summary>图片识别原文<\/summary>/);
 assert.doesNotMatch(markdown, /视频转写原文/);
 assert.equal(
   testApi.buildNoteFilePath("这玩意真直接把视频搬运号的饭碗给掀了"),
-  "00_Inbox 收集箱/来源-小红书/这玩意真直接把视频搬运号的饭碗给掀了-CN.md",
+  "00_Inbox 收集箱/来源-小红书/这玩意真直接把视频搬运号的饭碗给掀了.md",
 );
 assert.equal(
   testApi.buildNoteFilePath("AI 产品验收标准-CN"),
   "00_Inbox 收集箱/来源-小红书/AI 产品验收标准-CN.md",
 );
-assert.match(testApi.buildNoteFilePath("超长标题".repeat(20)), /-CN\.md$/);
+assert.doesNotMatch(testApi.buildNoteFilePath("超长标题".repeat(20)), /-CN\.md$/);
 assert.equal(
   testApi.parseRetryDelayMs({ error: { message: "Please try again in 1.595s" } }, 1),
   2595,
@@ -152,6 +152,7 @@ assert.equal(chunks.join("\n"), longText);
 const fallbackSummary = testApi.buildSummaryFallback(new Error("网络连接已中断"));
 assert.match(fallbackSummary, /识别原文已经保留下来/);
 assert.match(fallbackSummary, /网络连接已中断/);
-assert.match(fallbackSummary, /#待总结-CN/);
+assert.match(fallbackSummary, /#待总结/);
+assert.doesNotMatch(fallbackSummary, /#待总结-CN/);
 
 console.log("parser tests passed");

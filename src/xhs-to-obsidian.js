@@ -1,5 +1,5 @@
-// XHS to Obsidian for Scriptable v1.6.0
-// 小红书图文/视频解析 -> 千问识别与总结 -> Obsidian CN
+// XHS to Obsidian for Scriptable v1.6.1
+// 小红书图文/视频解析 -> 千问识别与总结 -> Obsidian
 
 const DASHSCOPE_KEY_NAME = "xhs_obsidian_dashscope_api_key";
 const DASHSCOPE_BASE_URL_NAME = "xhs_obsidian_dashscope_base_url";
@@ -491,7 +491,7 @@ async function summarizeNote(note, videoContent, imageContent, apiKey, baseUrl) 
   const sections = note.type === "video"
     ? "“## 内容摘要”“## 视频内容”“## 核心要点”“## 标签”四个部分"
     : "“## 内容摘要”“## 核心要点”“## 标签”三个部分";
-  const prompt = `请根据以下小红书笔记信息生成结构化 Markdown 摘要。\n\n标题：${note.title}\n原文：${note.desc || "无"}\n${material}\n\n要求：\n1. 只依据材料，不要猜测或编造。图片识别内容可能有误，遇到矛盾或无法辨识的信息要明确说明。\n2. 输出${sections}。\n3. 内容摘要用一段话；核心要点使用列表；标签输出 3-8 个中文 Obsidian 标签，每个标签都以 -CN 结尾，例如 #人工智能-CN。\n4. 涉及金额、比例、日期、政策条件时保留原始数值，并提醒读者以当地官方口径为准。\n5. 不要重复输出一级标题和来源链接。`;
+  const prompt = `请根据以下小红书笔记信息生成结构化 Markdown 摘要。\n\n标题：${note.title}\n原文：${note.desc || "无"}\n${material}\n\n要求：\n1. 只依据材料，不要猜测或编造。图片识别内容可能有误，遇到矛盾或无法辨识的信息要明确说明。\n2. 输出${sections}。\n3. 内容摘要用一段话；核心要点使用列表；标签输出 3-8 个中文 Obsidian 标签。\n4. 涉及金额、比例、日期、政策条件时保留原始数值，并提醒读者以当地官方口径为准。\n5. 不要重复输出一级标题和来源链接。`;
 
   currentStage = "等待千问汇总结构化摘要";
   return loadQwenTextWithRetry(prompt, apiKey, baseUrl, "千问生成摘要", 4096);
@@ -571,12 +571,12 @@ function splitTextByLength(text, maxChars) {
 
 function buildSummaryFallback(error) {
   const reason = String(error?.message || error || "未知错误").replace(/\s+/g, " ").slice(0, 240);
-  return `## 内容摘要\n\n> 千问在自动重试后仍未完成摘要，但识别原文已经保留下来，本笔记仍会正常保存。\n> 原因：${reason}\n\n## 核心要点\n\n- 请展开下方识别原文查看完整内容。\n- 网络恢复后可以重新运行脚本生成结构化摘要。\n\n## 标签\n\n#待总结-CN`;
+  return `## 内容摘要\n\n> 千问在自动重试后仍未完成摘要，但识别原文已经保留下来，本笔记仍会正常保存。\n> 原因：${reason}\n\n## 核心要点\n\n- 请展开下方识别原文查看完整内容。\n- 网络恢复后可以重新运行脚本生成结构化摘要。\n\n## 标签\n\n#待总结`;
 }
 
 function buildMarkdown(note, videoContent, imageContent, summary) {
   const captured = formatLocalDate(new Date());
-  const cnTitle = withCnSuffix(note.title);
+  const displayTitle = String(note.title || "").trim() || "小红书摘录";
   const images = note.imageUrls.length
     ? `\n\n## 笔记图片\n\n${note.imageUrls.map((url, index) => `![小红书图片 ${index + 1}](${url})`).join("\n\n")}`
     : "";
@@ -586,24 +586,17 @@ function buildMarkdown(note, videoContent, imageContent, summary) {
   const imageContentBlock = imageContent
     ? `\n\n<details>\n<summary>图片识别原文</summary>\n\n${imageContent}\n\n</details>`
     : "";
-  return `---\nsource: "${note.sourceUrl.replace(/"/g, '\\"')}"\nplatform: xiaohongshu\nregion: CN\ncontent_type: ${note.type}\ncaptured: ${captured}\ntags:\n  - 小红书摘录-CN\n---\n\n# ${cnTitle}\n\n> [查看原笔记](${note.sourceUrl})\n\n## 笔记原文\n\n${note.desc || "（原笔记没有文字说明）"}${images}\n\n${summary}${videoContentBlock}${imageContentBlock}\n`;
-}
-
-function withCnSuffix(title) {
-  const normalized = String(title || "").trim().replace(/(?:\s*[-–—]?\s*CN)+$/i, "").trim();
-  return `${normalized || "小红书摘录"}-CN`;
+  return `---\nsource: "${note.sourceUrl.replace(/"/g, '\\"')}"\nplatform: xiaohongshu\ncontent_type: ${note.type}\ncaptured: ${captured}\n---\n\n# ${displayTitle}\n\n> [查看原笔记](${note.sourceUrl})\n\n## 笔记原文\n\n${note.desc || "（原笔记没有文字说明）"}${images}\n\n${summary}${videoContentBlock}${imageContentBlock}\n`;
 }
 
 function buildNoteFilePath(title) {
-  const sanitizedTitle = withCnSuffix(title)
+  const safeTitle = String(title || "")
     .replace(/[\\/:*?"<>|#[\]^]/g, " ")
     .replace(/\s+/g, " ")
-    .trim();
-  const safeTitle = sanitizedTitle.length > 60
-    ? `${sanitizedTitle.slice(0, 57).replace(/[-–—\s]+$/, "")}-CN`
-    : sanitizedTitle;
+    .trim()
+    .slice(0, 60);
 
-  return `00_Inbox 收集箱/来源-小红书/${safeTitle}.md`;
+  return `00_Inbox 收集箱/来源-小红书/${safeTitle || "小红书摘录"}.md`;
 }
 
 function openInObsidian(title) {
