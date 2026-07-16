@@ -8,7 +8,7 @@ const source = fs.readFileSync(fs.existsSync(skillScript) ? skillScript : repoSc
 const executable = source.slice(0, source.indexOf("\ntry {\n  await main();"));
 const context = { console, Date, JSON, RegExp, Set, String, Math };
 
-assert.match(source, /^\/\/ XHS to Obsidian for Scriptable v1\.6\.1/);
+assert.match(source, /^\/\/ XHS to Obsidian- CN for Scriptable v1\.6\.1/);
 assert.match(source, /const VISION_MODEL = "qwen3\.7-plus"/);
 assert.match(source, /const SUMMARY_MODEL = "qwen3\.7-plus"/);
 assert.match(source, /qwen3\.5-omni-plus-2026-03-15/);

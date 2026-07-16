@@ -1,4 +1,4 @@
-// XHS to Obsidian for Scriptable v1.6.1
+// XHS to Obsidian- CN for Scriptable v1.6.1
 // 小红书图文/视频解析 -> 千问识别与总结 -> Obsidian
 
 const DASHSCOPE_KEY_NAME = "xhs_obsidian_dashscope_api_key";
