@@ -1,6 +1,6 @@
 # XHS to Obsidian- CN
 
-一套在 iPhone/iPad 上运行的小红书图文与视频摘录流程：解析分享链接，用千问大模型识别图片、视频画面、字幕和声音，生成结构化摘要，再写入 Obsidian。
+一套在 iPhone/iPad 上运行的小红书图文与视频摘录流程：解析分享链接，识别图片、视频画面、字幕和声音，生成结构化摘要，再写入 Obsidian。
 
 ## 主要功能
 
@@ -18,7 +18,7 @@
 - [Scriptable](https://scriptable.app/)
 - Apple 快捷指令
 - [Obsidian](https://obsidian.md/)
-- 千问 API Key
+- 大模型 API Key
 
 ## 安装
 
@@ -26,7 +26,7 @@
 2. 在 Scriptable 中新建脚本，命名为“小红书解析”，粘贴完整代码。
 3. 新建 Apple 快捷指令，添加 `Scriptable -> Run Script`，选择“小红书解析”。
 4. 开启 `Run In App`，首次运行时允许读取剪贴板。
-5. 首次运行输入一个千问 API Key。
+5. 首次运行输入一个大模型 API Key。
 
 处理超过 10 分钟的视频时，脚本会询问该 Key 对应的业务空间专属 API Host，通常形如 `https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com`。
 
@@ -48,7 +48,7 @@ node tests/parser.test.mjs
 
 ## 限制与隐私
 
-- 千问会接收图片 URL、视频 URL、标题、原文和识别内容，用于生成识别结果与摘要。
+- 大模型会接收图片 URL、视频 URL、标题、原文和识别内容，用于生成识别结果与摘要。
 - API Key 通过 Scriptable Keychain 保存在本机，不会写入 Markdown 或仓库。
 - 小红书 CDN URL 可能过期，建议及时运行脚本。
 - OCR、字幕与视频理解可能出错，政策、金额、日期等信息应回看原内容和官方来源。
