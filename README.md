@@ -2,15 +2,11 @@
 
 一套在 iPhone/iPad 上运行的小红书图文与视频摘录流程：解析分享链接，用千问大模型识别图片、视频画面、字幕和声音，生成结构化摘要，再写入 Obsidian。
 
-`CN` 仅是这个 GitHub Skill 的名称标识，不会改写 Obsidian 笔记的标题、文件名或标签。
-
 ## 主要功能
 
-- 从剪贴板提取 `xhslink.com` 或 `xiaohongshu.com` 链接。
+- 从剪贴板提取小红书链接。
 - 自动识别图文或视频笔记。
-- 千问大模型负责图片 OCR、画面理解和结构化总结。
-- 视频根据时长在有免费额度的 HTTP 全模态模型中自动轮转。
-- 额度用尽、限流或模型不适配时自动切换。
+- 大模型负责图片 OCR、画面理解和结构化总结。
 - 视频完整理解失败时，如果小红书提供中文字幕，自动使用字幕继续整理。
 - 将 API Key 保存在 iPhone 的 Scriptable Keychain。
 - 图文超过 5 张时自动分批识别。
@@ -22,7 +18,7 @@
 - [Scriptable](https://scriptable.app/)
 - Apple 快捷指令
 - [Obsidian](https://obsidian.md/)
-- 阿里云百炼 API Key（华北2/北京）
+- 千问 API Key
 
 ## 安装
 
@@ -30,7 +26,7 @@
 2. 在 Scriptable 中新建脚本，命名为“小红书解析”，粘贴完整代码。
 3. 新建 Apple 快捷指令，添加 `Scriptable -> Run Script`，选择“小红书解析”。
 4. 开启 `Run In App`，首次运行时允许读取剪贴板。
-5. 首次运行输入一个阿里云百炼 API Key，不要把 Key 写进脚本。
+5. 首次运行输入一个千问 API Key。
 
 处理超过 10 分钟的视频时，脚本会询问该 Key 对应的业务空间专属 API Host，通常形如 `https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com`。
 
